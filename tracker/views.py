@@ -7,6 +7,7 @@ from django.db.models import Sum
 from django.db.models.functions import TruncMonth
 from django.utils import timezone
 from django.views.generic import TemplateView
+
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -15,7 +16,6 @@ from .models import Expense, Income
 
 
 def _month_year_from_request(request):
-    """Parse month/year query params with safe fallback to current month/year."""
     today = timezone.localdate()
     try:
         month = int(request.GET.get("month", today.month))
@@ -63,34 +63,10 @@ class MonthlySummaryAPIView(APIView):
         total_income = incomes.aggregate(total=Sum("amount")).get("total") or Decimal("0")
         total_expense = expenses.aggregate(total=Sum("amount")).get("total") or Decimal("0")
 
-        # Bonus insight: compare current expenses against previous month.
-        if month == 1:
-            previous_start, previous_end = _month_range(year - 1, 12)
-        else:
-            previous_start, previous_end = _month_range(year, month - 1)
-
-        previous_total = (
-            Expense.objects.filter(user=request.user, date__gte=previous_start, date__lt=previous_end)
-            .aggregate(total=Sum("amount"))
-            .get("total")
-            or Decimal("0")
-        )
-
-        percent_change = 0
-        if previous_total > 0:
-            percent_change = round(((total_expense - previous_total) / previous_total) * 100, 2)
-
-        return Response(
-            {
-                "labels": ["Income", "Expenses"],
-                "data": [float(total_income), float(total_expense)],
-                "meta": {
-                    "month": month,
-                    "year": year,
-                    "expense_change_vs_previous_month_pct": float(percent_change),
-                },
-            }
-        )
+        return Response({
+            "labels": ["Income", "Expenses"],
+            "data": [float(total_income), float(total_expense)],
+        })
 
 
 class CategoryExpenseAPIView(APIView):
@@ -109,35 +85,25 @@ class CategoryExpenseAPIView(APIView):
 
         labels = [entry["category__name"] for entry in category_totals]
         data = [float(entry["total"]) for entry in category_totals]
-        total_expense = sum(data)
 
-        insights = [
-            {
-                "category": labels[idx],
-                "amount": value,
-                "percent": round((value / total_expense) * 100, 2) if total_expense else 0,
-            }
-            for idx, value in enumerate(data)
-        ]
-
-        return Response({"labels": labels, "data": data, "insights": insights})
+        return Response({"labels": labels, "data": data})
 
 
 class ExpenseTrendAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        # Last 6 months trend for a better dashboard story.
         month, year = _month_year_from_request(request)
         _, end_date = _month_range(year, month)
 
-        # Start 6 months before selected month (approx by going to first day then truncation).
         start_anchor = date(year, month, 1)
         start_month = start_anchor.month - 5
         start_year = start_anchor.year
+
         while start_month <= 0:
             start_month += 12
             start_year -= 1
+
         start_date = date(start_year, start_month, 1)
 
         rows = (
@@ -152,4 +118,3 @@ class ExpenseTrendAPIView(APIView):
         data = [float(row["total"]) for row in rows]
 
         return Response({"labels": labels, "data": data})
-

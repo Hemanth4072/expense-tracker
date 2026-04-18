@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Expense Analytics Dashboard</title>
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+      integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH"
+      crossorigin="anonymous"
+    />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  </head>
+  <body class="bg-light">
+    <div class="container py-4">
+      <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
+        <div>
+          <h1 class="h3 mb-1">Financial Analytics Dashboard</h1>
+          <p class="text-muted mb-0">Track spending behavior and monitor monthly performance.</p>
+        </div>
+        <div class="d-flex gap-2">
+          <select id="monthSelect" class="form-select">
+            {% for month in months %}
+              <option value="{{ month.value }}" {% if month.value == selected_month %}selected{% endif %}>{{ month.label }}</option>
+            {% endfor %}
+          </select>
+          <input id="yearInput" type="number" min="2000" class="form-control" value="{{ selected_year }}" />
+          <button id="filterButton" class="btn btn-primary">Apply</button>
+        </div>
+      </div>
+
+      <div id="loadingAlert" class="alert alert-info" role="alert">Loading analytics…</div>
+      <div id="emptyAlert" class="alert alert-warning d-none" role="alert">
+        No data found for the selected period.
+      </div>
+
+      <div class="row g-4">
+        <div class="col-12 col-lg-6">
+          <div class="card shadow-sm h-100">
+            <div class="card-body">
+              <h2 class="h5 card-title">Monthly Overview</h2>
+              <canvas id="monthlySummaryChart" height="180"></canvas>
+              <p id="comparisonText" class="small text-muted mt-3 mb-0"></p>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-12 col-lg-6">
+          <div class="card shadow-sm h-100">
+            <div class="card-body">
+              <h2 class="h5 card-title">Spending by Category</h2>
+              <canvas id="categoryChart" height="180"></canvas>
+              <ul id="categoryInsights" class="small text-muted mt-3 ps-3 mb-0"></ul>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-12">
+          <div class="card shadow-sm">
+            <div class="card-body">
+              <h2 class="h5 card-title">Spending Trend</h2>
+              <canvas id="trendChart" height="110"></canvas>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const state = {
+        monthlyChart: null,
+        categoryChart: null,
+        trendChart: null,
+      };
+
+      const chartColors = {
+        primary: "#0d6efd",
+        danger: "#dc3545",
+        success: "#198754",
+        warning: "#ffc107",
+        info: "#0dcaf0",
+        purple: "#6f42c1",
+      };
+
+      async function fetchJson(url) {
+        const response = await fetch(url);
+        if (!response.ok) {
+          throw new Error(`Failed API call: ${url}`);
+        }
+        return response.json();
+      }
+
+      function queryParams() {
+        const month = document.getElementById("monthSelect").value;
+        const year = document.getElementById("yearInput").value;
+        return `?month=${month}&year=${year}`;
+      }
+
+      function destroyCharts() {
+        ["monthlyChart", "categoryChart", "trendChart"].forEach((key) => {
+          if (state[key]) {
+            state[key].destroy();
+          }
+        });
+      }
+
+      function renderMonthlyChart(payload) {
+        const ctx = document.getElementById("monthlySummaryChart");
+        state.monthlyChart = new Chart(ctx, {
+          type: "bar",
+          data: {
+            labels: payload.labels,
+            datasets: [{
+              label: "Amount",
+              data: payload.data,
+              backgroundColor: [chartColors.success, chartColors.danger],
+              borderRadius: 6,
+            }],
+          },
+          options: { responsive: true, plugins: { legend: { display: false } } },
+        });
+
+        const comparisonText = document.getElementById("comparisonText");
+        const changePct = payload.meta.expense_change_vs_previous_month_pct;
+        const direction = changePct > 0 ? "up" : changePct < 0 ? "down" : "flat";
+        comparisonText.textContent = `Expenses are ${Math.abs(changePct)}% ${direction} compared to previous month.`;
+      }
+
+      function renderCategoryChart(payload) {
+        const ctx = document.getElementById("categoryChart");
+        state.categoryChart = new Chart(ctx, {
+          type: "pie",
+          data: {
+            labels: payload.labels,
+            datasets: [{
+              data: payload.data,
+              backgroundColor: [
+                chartColors.primary,
+                chartColors.warning,
+                chartColors.success,
+                chartColors.info,
+                chartColors.purple,
+                chartColors.danger,
+              ],
+            }],
+          },
+          options: { responsive: true },
+        });
+
+        const insightsNode = document.getElementById("categoryInsights");
+        insightsNode.innerHTML = "";
+        payload.insights.slice(0, 4).forEach((item) => {
+          const li = document.createElement("li");
+          li.textContent = `${item.category} = ${item.percent}% of expenses`;
+          insightsNode.appendChild(li);
+        });
+      }
+
+      function renderTrendChart(payload) {
+        const ctx = document.getElementById("trendChart");
+        state.trendChart = new Chart(ctx, {
+          type: "line",
+          data: {
+            labels: payload.labels,
+            datasets: [{
+              label: "Expense Trend",
+              data: payload.data,
+              borderColor: chartColors.primary,
+              backgroundColor: "rgba(13,110,253,.15)",
+              fill: true,
+              tension: 0.35,
+            }],
+          },
+          options: { responsive: true },
+        });
+      }
+
+      async function loadDashboard() {
+        const loadingAlert = document.getElementById("loadingAlert");
+        const emptyAlert = document.getElementById("emptyAlert");
+        loadingAlert.classList.remove("d-none");
+        emptyAlert.classList.add("d-none");
+
+        try {
+          const params = queryParams();
+          const [monthly, category, trend] = await Promise.all([
+            fetchJson(`/api/monthly-summary/${params}`),
+            fetchJson(`/api/category-expense/${params}`),
+            fetchJson(`/api/expense-trend/${params}`),
+          ]);
+
+          destroyCharts();
+
+          const hasAnyData = [...monthly.data, ...category.data, ...trend.data].some((value) => value > 0);
+          if (!hasAnyData) {
+            emptyAlert.classList.remove("d-none");
+          }
+
+          renderMonthlyChart(monthly);
+          renderCategoryChart(category);
+          renderTrendChart(trend);
+        } catch (error) {
+          console.error(error);
+          emptyAlert.textContent = "Unable to load analytics right now. Please try again.";
+          emptyAlert.classList.remove("d-none");
+        } finally {
+          loadingAlert.classList.add("d-none");
+        }
+      }
+
+      document.getElementById("filterButton").addEventListener("click", loadDashboard);
+      loadDashboard();
+    </script>
+  </body>
+</html>

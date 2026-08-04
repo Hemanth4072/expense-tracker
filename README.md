@@ -70,10 +70,3 @@ A Django-based expense tracker with a professional analytics dashboard powered b
    ```
 6. Open `http://127.0.0.1:8000/dashboard/` (login required).
 
-## Production-readiness suggestions
-- Add automated tests for APIs and template rendering.
-- Enforce stricter API throttling and pagination where needed.
-- Cache dashboard aggregates (Redis) for large datasets.
-- Add Celery jobs for heavy analytics and scheduled reports.
-- Add CSP/security headers and move static assets to CDN.
-- Add per-user timezone support and currency formatting.

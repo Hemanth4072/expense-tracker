@@ -2,13 +2,6 @@
 
 A Django-based expense tracker with a professional analytics dashboard powered by Chart.js.
 
-## Features
-- Monthly Overview (Income vs Expenses)
-- Category-wise spending breakdown with percentage insights
-- 6-month expense trend line chart
-- API endpoints built with Django REST Framework
-- Month/year filter on dashboard
-
 ## API Endpoints
 - `GET /api/monthly-summary/?month=4&year=2026`
 - `GET /api/category-expense/?month=4&year=2026`
